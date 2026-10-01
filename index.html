@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AV Safe-Drive Dashboard v2</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f3f5f9;--card:#fff;--tx:#14213d;--mu:#5b677d;--bd:#d9deea;--ac:#2563eb}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1320;--card:#151d30;--tx:#e8edf7;--mu:#93a0b8;--bd:#26314b;--ac:#60a5fa}}
+:root[data-theme="dark"]{--bg:#0d1320;--card:#151d30;--tx:#e8edf7;--mu:#93a0b8;--bd:#26314b;--ac:#60a5fa}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--bd);background:var(--card)}
+h1{font-size:17px;margin:0}h2{font-size:12px;margin:0 0 8px;color:var(--mu);text-transform:uppercase;letter-spacing:.05em}
+.sub{color:var(--mu);font-size:12px}
+main{padding:12px;display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));max-width:1300px;margin:auto}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;min-width:0}
+.wide{grid-column:1/-1}.two{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr))}
+canvas{width:100%;display:block;border-radius:8px;background:#0b1020}
+#bird{max-width:320px;margin:auto}#fc{max-width:140px;background:#1b2338}
+.pipe{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.st{border:1px solid var(--bd);border-radius:8px;padding:7px;text-align:center;font-size:11px;opacity:.6}.st b{display:block;font-size:12px}.st.on{opacity:1;border-color:var(--ac)}.st.bad{border-color:#ef4444;background:rgba(239,68,68,.12);opacity:1}
+.badge{display:inline-block;color:#fff;font-weight:700;font-size:19px;padding:5px 13px;border-radius:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+button,select{background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer}
+button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:4px 5px;border-bottom:1px solid var(--bd)}
+.scroll{overflow-x:auto}.chip{padding:1px 7px;border-radius:99px;color:#fff;font-size:11px;white-space:nowrap}
+.al{font-size:12px;padding:4px 0;border-bottom:1px solid var(--bd)}
+.bar{display:flex;align-items:center;gap:6px;font-size:12px;margin:3px 0}.bar i{display:block;height:8px;border-radius:4px}
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;text-align:center;font-size:11px}.kpi div{border:1px solid var(--bd);border-radius:8px;padding:5px}.kpi b{display:block;font-size:16px}
+input[type=range]{width:100%}label.btn{border:1px solid var(--bd);border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer;background:var(--card)}
+@media(max-width:620px){.pipe{grid-template-columns:repeat(2,1fr)}}
+</style></head><body>
+<header><div><h1>🚗 AV Safe-Drive Dashboard v2</h1><div class="sub">Adaptive path planning · collision avoidance · driver-impairment safety (simulation)</div></div>
+<div class="row" style="margin:0"><select id="sel"></select><button id="mode">Planner: Ours</button><button id="play" class="p">⏸ Pause</button><button id="cam">📷 Webcam</button><label class="btn"><input type="file" id="vf" accept="video/*" hidden>🎞 Upload video</label><button id="rec">⏺ Record clip</button></div></header>
+<main>
+<section class="card wide"><h2>Real-time pipeline: Camera → Detection &amp; tracking → Prediction &amp; risk → Alert → Safe path → Driver state</h2>
+<div class="pipe"><div class="st on" id="s1"><b>1 Camera</b><span>30 fps</span></div><div class="st on" id="s2"><b>2 Detect + track</b><span id="t2"></span></div><div class="st on" id="s3"><b>3 Predict + risk</b><span id="t3"></span></div><div class="st" id="s4"><b>4 Alert</b><span id="t4"></span></div><div class="st on" id="s5"><b>5 Safe path</b><span id="t5"></span></div><div class="st on" id="s6"><b>6 Driver state</b><span id="t6"></span></div></div></section>
+
+<section class="card wide two"><div><h2>Live camera view · detections</h2><canvas id="cv" width="640" height="360"></canvas></div>
+<div><h2>Risk status</h2><span class="badge" id="badge">LOW RISK</span><p id="why" style="margin:8px 0 4px"></p><p style="margin:4px 0"><b>Decision (FSM):</b> <span id="dec"></span></p>
+<div class="kpi" id="m"></div><h2 style="margin-top:12px">Lateral candidates · collision risk &amp; cost</h2><div id="costs"></div></div></section>
+
+<section class="card"><h2>Planner view (bird's-eye · prediction cloud)</h2><canvas id="bird" width="280" height="400"></canvas></section>
+<section class="card"><h2>Tracked objects</h2><table><thead><tr><th>Class</th><th>Conf</th><th>Dist</th><th>TTC</th><th>P(coll)</th><th>Risk</th></tr></thead><tbody id="tb"></tbody></table></section>
+<section class="card"><h2>Driver impairment monitor</h2><canvas id="fc" width="140" height="70"></canvas>
+<label class="sub">Simulated impairment <b id="svl">0</b>%</label><input type="range" id="sev" min="0" max="100" value="0">
+<div class="sub" id="sig" style="margin:6px 0"></div><div class="bar"><span>Driver risk</span><i id="drb" style="width:10px;background:#22c55e"></i><b id="drv"></b></div><div id="lad" class="row"></div><div class="sub" id="ign" style="margin-top:6px"></div></section>
+<section class="card"><h2>Alerts</h2><div id="al"></div></section>
+
+<section class="card wide"><h2>Recorded clip (replay)</h2><div id="clip" class="sub">Press ⏺ Record clip to capture the camera view (vehicles moving + detections), then replay it here.</div></section>
+
+<section class="card wide"><h2>5-scenario benchmark · our planner vs brake-only baseline (25 s each, same seed)</h2><div class="scroll"><table><thead><tr><th>Scenario</th><th>Planner</th><th>Collisions</th><th>Min gap</th><th>Replan latency</th><th>RMS lat. accel</th><th>Completed</th></tr></thead><tbody id="res"></tbody></table></div><div class="row"><button id="bn" class="p">Re-run benchmark</button><span class="sub" id="bsum"></span></div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const TY={auto:{w:1.4,l:2.6,c:'#f5c518',n:'auto-rickshaw',k:0},car:{w:1.8,l:4.2,c:'#4da3ff',n:'car',k:0},bike:{w:.8,l:2,c:'#ff7ac6',n:'two-wheeler',k:0},truck:{w:2.4,l:7,c:'#b0b7c3',n:'truck',k:0},ped:{w:.6,l:.6,c:'#7dffb0',n:'pedestrian',k:1},cow:{w:.9,l:1.8,c:'#ffa94d',n:'cow',k:2},cart:{w:1,l:1.8,c:'#9ae6b4',n:'pushcart',k:2},rock:{w:1,l:1,c:'#c792ea',n:'road debris',k:2}};
+const RC=['#22c55e','#f59e0b','#ef4444'],RN=['LOW','MEDIUM','HIGH'],DC={OK:'#22c55e',WARN:'#f59e0b',CONSERVATIVE:'#f97316',TAKEOVER:'#ef4444',MRM:'#b91c1c'},DS=Object.keys(DC),CAP={OK:1,WARN:.9,CONSERVATIVE:.7,TAKEOVER:.7,MRM:0};
+const SC=[
+{n:'Village road (unmarked)',cv:8,hw:3,init:[['rock',.5,30,0,0],['cart',-1.5,42,0,1.2],['ped',-4.4,26,1,0]],mix:[['ped',.05],['cow',.03],['rock',.04],['bike',.05],['cart',.04]]},
+{n:'Urban intersection (no signal)',cv:7,hw:3.5,init:[['car',-9,26,4,0],['ped',4.8,30,-1.1,0]],mix:[['xcar',.12],['ped',.06],['auto',.06],['bike',.06]]},
+{n:'Highway merge (slow vehicles)',cv:12,hw:3.5,init:[['truck',1.9,34,0,4],['car',5,22,-1.6,9],['car',-1.9,45,0,8]],mix:[['truck',.04],['car',.08],['auto',.03],['bike',.04]]},
+{n:'Dense market (mixed traffic)',cv:5,hw:3.5,init:[['ped',-4,18,1.2,0],['cart',1,24,0,1.2],['auto',-1.8,30,0,2],['bike',2.5,22,-1,3]],mix:[['ped',.25],['cart',.12],['auto',.1],['bike',.15],['cow',.03]]},
+{n:'Sudden cattle crossing',cv:8,hw:3.5,init:[['cow',-3,26,.8,0],['cow',-4.5,32,.8,0],['cow',1,38,0,0],['car',2,50,0,5]],mix:[['cow',.05],['ped',.03],['car',.04]]}];
+const CD=[-3,-2,-1,0,1,2,3],TT=[.5,1,1.5,2,2.5,3],N=48,sm=u=>u*u*(3-2*u);
+const mk=a=>()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+const gauss=r=>Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.2832*r()),rn=(r,a,b)=>a+r()*(b-a);
+function sim(si,mode,seed,sev){const sc=SC[si],s={sc,mode,rng:mk(seed),nr:mk(seed+99),t:0,x:0,vl:0,v:sc.cv,objs:[],uid:0,col:0,gap:99,dist:0,pt:0,a2:0,an:0,msSum:0,msN:0,lv:{},alerts:[],sev:sev||0,dr:.12,ds:'OK',tk:0,mrm:0,lastC:0,A:{lvl:0,why:'Initialising…',st:'CRUISE',tc:0,tv:sc.cv,costs:[]}};
+ sc.init.forEach(([t,x,y,vx,vy])=>s.objs.push({id:++s.uid,t,x,y,vx,vy,conf:.9,lvl:0,p:0}));return s}
+function gen(s,t){const r=s.rng,hw=s.sc.hw,sg=r()<.5?-1:1,o={t,x:0,y:rn(r,52,68),vx:0,vy:0,lvl:0,p:0,id:++s.uid,conf:rn(r,.84,.98)};
+ if(t=='xcar'){o.t='car';o.x=-11*sg;o.y=rn(r,18,34);o.vx=4*sg}
+ else if(t=='ped'){o.x=(hw+1.4)*sg;o.y=rn(r,24,48);o.vx=-sg*rn(r,.8,1.4)}
+ else if(TY[t].k==0||t=='cart'){o.x=sg*hw*.6+rn(r,-.3,.3);o.vy=t=='cart'?rn(r,1,1.6):rn(r,3,7);if(t=='bike')o.vx=rn(r,-1,1)}
+ else{o.x=rn(r,-hw+.6,hw-.6);o.y=rn(r,36,60)}
+ return o}
+function sig(s){const v=s.sev;return{perclos:.08+.5*v,react:.3+.9*v,weave:.05+.6*v,breath:.5*v}}
+function driverTarget(s){const g=sig(s);return Math.min(1,.3*g.perclos/.6+.25*g.react/1.2+.2*g.weave/.65+.25*g.breath/.5)}
+function track(s,o,dt){const r=s.nr,zx=o.x+gauss(r)*.25,zy=o.y+gauss(r)*.5;
+ if(o.ex===undefined){o.ex=zx;o.ey=zy;o.evx=o.vx;o.evy=o.vy-s.v;o.sg=.6;return}
+ o.ex+=o.evx*dt;o.ey+=o.evy*dt;const a=zx-o.ex,b=zy-o.ey;o.ex+=.5*a;o.ey+=.5*b;o.evx+=.25*a/dt;o.evy+=.25*b/dt;o.sg=Math.max(.25,o.sg*.9)}
+function cloud(s,o){const r=s.nr,d=TY[o.t].k==1?1:o.t=='rock'?0:.5,P=[];
+ for(let i=0;i<N;i++){const u=r(),m=u<.7?0:u<.85?1:-1;P.push([o.ex+gauss(r)*o.sg,o.ey,o.evx+m*d+gauss(r)*.2,o.evy+gauss(r)*.4])}o.P=P}
+function pcol(o,pf,mg){const T=TY[o.t],hw=T.w/2+.9*mg,ah=T.l/2+2*mg,bh=-4.2-T.l/2;let n=0;
+ for(const p of o.P)for(const t of TT){const x=p[0]+p[2]*t,y=p[1]+p[3]*t;if(y<ah&&y>bh&&Math.abs(x-pf(t))<hw){n++;break}}return n/N}
+const why=(o,m)=>`${TY[o.t].n} ${o.ey.toFixed(0)} m ahead · ${m=='ours'?'collision prob '+(o.p*100|0)+'% (Monte-Carlo '+N+' samples)':'brake rule'} · TTC ${o.ttc>50?'–':o.ttc.toFixed(1)+' s'} · track σ ${o.sg.toFixed(1)} m`;
+function plan(s,dt){const t0=performance.now(),hw=s.sc.hw,dr=s.dr,mg=1+.5*dr,hiT=.2*(1-.5*dr),mdT=.06*(1-.5*dr);
+ for(const o of s.objs)track(s,o,dt);
+ const vis=s.objs.filter(o=>o.ey>-4&&o.ey<60);let worst=null;
+ if(s.mode=='ours')vis.forEach(o=>cloud(s,o));
+ for(const o of vis){const T=TY[o.t];o.ttc=o.evy<-.2?Math.max(o.ey-T.l/2-2.2,0)/-o.evy:99;
+  if(s.mode=='ours'){o.p=pcol(o,()=>s.x,mg);o.lvl=o.p>=hiT?2:o.p>=mdT?1:0}else{o.p=0;o.lvl=Math.abs(o.ex-s.x)<T.w/2+1.2&&o.ttc<3?2:0}
+  if(o.ey<6&&Math.abs(o.ex-s.x)<2.2)o.lvl=Math.max(o.lvl,1);
+  if(o.lvl>(s.lv[o.id]||0))s.alerts.unshift({t:s.t,l:o.lvl,m:why(o,s.mode)});s.lv[o.id]=o.lvl;
+  if(!worst||o.lvl>worst.lvl||(o.lvl==worst.lvl&&o.p>worst.p))worst=o}
+ const lvl=worst?worst.lvl:0;let tv=s.sc.cv*CAP[s.ds],tc=0,st='CRUISE',costs=[];
+ if(s.mode=='ours'){const cs=CD.filter(c=>Math.abs(c)<=hw-.8);
+  costs=cs.map(c=>{const pf=t=>s.x+(c-s.x)*sm(Math.min(t/2.5,1));let q=1;for(const o of vis)q*=1-pcol(o,pf,mg);const risk=1-q;
+   return{c,risk,cost:10*risk+.5*Math.abs(c-s.x)+.15*Math.abs(c-s.lastC)+.1*Math.abs(c)+(s.mrm?.5*Math.abs(c-(hw-.9)):0)}});
+  const b=costs.reduce((a,x)=>x.cost<a.cost?x:a);tc=b.c;s.lastC=tc;
+  if(lvl>0){if(b.risk<hiT){st='EVADE';tv*=lvl==2?.7:.85}else if(lvl==2){st='EMERGENCY BRAKE';tv=0}else{st='YIELD';tv*=.5}}}
+ else if(lvl==2){st='BRAKE';tv=0}
+ if(s.mrm&&st!='EMERGENCY BRAKE')st=s.v<.1?'MRM STOPPED':'MRM PULL-OVER';
+ return{lvl,costs,tc,tv,st,worst,why:lvl&&worst?why(worst,s.mode):'No object on a collision course.',ms:performance.now()-t0}}
+function step(s,dt){s.t+=dt;const sc=s.sc,hw=sc.hw;
+ s.dr+=(driverTarget(s)-s.dr)*Math.min(1,dt*1.5);
+ const d=s.dr<.3?'OK':s.dr<.5?'WARN':s.dr<.75?'CONSERVATIVE':'TAKEOVER';
+ s.tk=d=='TAKEOVER'?s.tk+dt:0;if(s.tk>4)s.mrm=1;if(s.mrm&&s.dr<.3)s.mrm=0;
+ const nd=s.mrm?'MRM':d;if(nd!=s.ds){s.ds=nd;s.alerts.unshift({t:s.t,l:nd=='OK'?0:nd=='WARN'||nd=='CONSERVATIVE'?1:2,m:nd=='MRM'?'Driver unresponsive/impaired → minimal-risk manoeuvre: hazards ON, pulling over, emergency contact notified':'Driver state → '+nd})}
+ for(const o of s.objs){o.x+=o.vx*dt;o.y+=(o.vy-s.v)*dt;const T=TY[o.t];
+  if(!o.hit&&Math.abs(o.x-s.x)<T.w/2+.9&&o.y<T.l/2+.3&&o.y>-4.2-T.l/2){o.hit=1;s.col++;s.alerts.unshift({t:s.t,l:2,m:'COLLISION with '+T.n})}
+  if(o.y>0){const g=Math.hypot(Math.max(Math.abs(o.x-s.x)-T.w/2-.9,0),Math.max(o.y-T.l/2,0));if(g<s.gap)s.gap=g}}
+ s.objs=s.objs.filter(o=>o.y>-8&&o.y<80&&Math.abs(o.x)<14);
+ if(s.objs.length<9)for(const[m,rt]of sc.mix)if(s.rng()<rt*dt)s.objs.push(gen(s,m));
+ s.alerts.length=Math.min(s.alerts.length,7);
+ s.pt+=dt;if(s.pt>=.1){s.A=plan(s,s.pt);s.pt=0;s.msSum+=s.A.ms;s.msN++}
+ const A=s.A;s.v+=Math.max(-(s.mrm?3:7)*dt,Math.min(2*dt,A.tv-s.v));if(s.v<.05&&s.mrm)s.v=0;
+ const ov=s.vl;s.vl+=Math.max(-2.5*dt,Math.min(2.5*dt,(A.tc-s.x)-s.vl));s.x=Math.max(-hw+.5,Math.min(hw-.5,s.x+s.vl*dt));s.a2+=((s.vl-ov)/dt)**2;s.an++;s.dist+=s.v*dt}
+/* ---------- UI ---------- */
+let S=sim(0,'ours',5),play=true,vid=null,last=performance.now(),lastUI=0;
+SC.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent=c.n;$('sel').appendChild(o)});
+const reset=()=>{S=sim(+$('sel').value,S.mode,5,+$('sev').value/100)};
+$('sel').onchange=reset;
+$('mode').onclick=()=>{const m=S.mode=='ours'?'brake':'ours';reset();S.mode=m;S.A.st='CRUISE';$('mode').textContent='Planner: '+(m=='ours'?'Ours':'Brake-only baseline')};
+$('play').onclick=()=>{play=!play;$('play').textContent=play?'⏸ Pause':'▶ Play'};
+const stopVid=()=>{if(vid){if(vid.srcObject)vid.srcObject.getTracks().forEach(t=>t.stop());vid.pause();vid=null}};
+$('cam').onclick=async()=>{if(vid){stopVid();return}try{const m=await navigator.mediaDevices.getUserMedia({video:true});vid=document.createElement('video');vid.srcObject=m;vid.muted=true;await vid.play()}catch(e){alert('Webcam unavailable; using simulated camera.')}};
+$('vf').onchange=e=>{const f=e.target.files[0];if(!f)return;stopVid();vid=document.createElement('video');vid.src=URL.createObjectURL(f);vid.muted=true;vid.loop=true;vid.playsInline=true;vid.play()};
+let rec=null,chunks=[],rt=0;
+$('rec').onclick=()=>{if(rec){rec.stop();return}
+ try{const st=$('cv').captureStream(30);rec=new MediaRecorder(st,MediaRecorder.isTypeSupported('video/webm')?{mimeType:'video/webm'}:{});chunks=[];rec.ondataavailable=e=>chunks.push(e.data);
+  rec.onstop=()=>{clearInterval(rt);const u=URL.createObjectURL(new Blob(chunks,{type:'video/webm'}));$('clip').innerHTML=`<video src="${u}" controls loop autoplay muted style="width:100%;max-width:640px;border-radius:8px"></video><div><a href="${u}" download="av-simulation.webm">⬇ Download .webm</a> <span class="sub">(if the download is blocked, right-click the video → Save video as)</span></div>`;rec=null;$('rec').textContent='⏺ Record clip'};
+  rec.start();let n=0;$('rec').textContent='⏹ Stop 0s';rt=setInterval(()=>{n++;$('rec').textContent='⏹ Stop '+n+'s';if(n>=20)rec.stop()},1000)}catch(e){rec=null;alert('Recording is not supported in this browser.')}};
+$('sev').oninput=()=>{S.sev=+$('sev').value/100;$('svl').textContent=$('sev').value};
+const pth=(s,y,c)=>s.x+(c-s.x)*sm(Math.min(Math.max(y/25,0),1));
+const HT={ped:1.7,cow:1.3,rock:.5,cart:1.3,bike:1.5,truck:3,car:1.5,auto:1.7};
+function sprite(g,o,x,y,u,t){const T=TY[o.t],w=T.w*u,h=HT[o.t]*u;
+ g.fillStyle='rgba(0,0,0,.3)';g.beginPath();g.ellipse(x,y,w*.6,u*.18,0,0,6.3);g.fill();
+ if(o.t=='ped'){const sw=Math.sin(t*8+o.id)*w*.35;g.fillStyle='#2b2b3a';g.fillRect(x-w*.3+sw,y-h*.45,w*.25,h*.45);g.fillRect(x+w*.05-sw,y-h*.45,w*.25,h*.45);g.fillStyle=['#e55','#58e','#5b5','#eb4'][o.id%4];g.fillRect(x-w*.4,y-h*.85,w*.8,h*.42);g.fillStyle='#d9a47a';g.beginPath();g.arc(x,y-h*.93,w*.3,0,6.3);g.fill();return}
+ if(o.t=='cow'){const sw=Math.sin(t*6+o.id)*w*.08;g.fillStyle='#6f5338';g.fillRect(x-w*.4+sw,y-h*.3,w*.14,h*.3);g.fillRect(x+w*.26-sw,y-h*.3,w*.14,h*.3);g.fillStyle='#8b6b4a';g.fillRect(x-w/2,y-h*.8,w,h*.52);g.fillStyle='#f1f1f1';g.fillRect(x-w*.15,y-h*.75,w*.3,h*.25);g.fillStyle='#6f5338';g.beginPath();g.arc(x,y-h*.9,w*.22,0,6.3);g.fill();return}
+ if(o.t=='rock'){g.fillStyle='#8a8f98';g.beginPath();g.moveTo(x-w/2,y);g.lineTo(x-w*.3,y-h);g.lineTo(x+w*.2,y-h*.9);g.lineTo(x+w/2,y);g.fill();return}
+ if(o.t=='bike'){g.fillStyle='#222';g.fillRect(x-w*.15,y-h*.5,w*.3,h*.5);g.fillStyle=T.c;g.fillRect(x-w*.35,y-h*.9,w*.7,h*.45);g.fillStyle='#d9a47a';g.beginPath();g.arc(x,y-h*.97,w*.28,0,6.3);g.fill();return}
+ const body=o.t=='truck'?'#7c8798':o.t=='auto'?'#f5c518':o.t=='cart'?'#a67c52':['#4da3ff','#e5e7eb','#ef6f6f','#7dd3a8'][o.id%4];
+ g.fillStyle=body;g.fillRect(x-w/2,y-h*.7,w,h*.55);g.fillStyle=o.t=='auto'?'#222':o.t=='cart'?'#6b4c2f':'#9fd0ff';g.fillRect(x-w*.38,y-h,w*.76,h*.3);
+ g.fillStyle='#e11';g.fillRect(x-w/2,y-h*.45,w*.14,h*.1);g.fillRect(x+w*.36,y-h*.45,w*.14,h*.1);g.fillStyle='#111';g.fillRect(x-w*.5,y-h*.15,w*.18,h*.15);g.fillRect(x+w*.32,y-h*.15,w*.18,h*.15)}
+function scenery(g,s,P,hw){const base=Math.floor(s.dist/8),off=s.dist%8;
+ for(let k=11;k>=0;k--){const z=k*8-off,i=base+k;if(z<.8)continue;
+  for(const sd of[-1,1]){const p=P(sd*(hw+2.6),z),u=60*p.s,ty=(i+(sd>0?1:0))%3;
+   if(ty==0){g.fillStyle='#555';g.fillRect(p.x-.08*u,p.y-5*u,.16*u,5*u);g.fillStyle='#fde68a';g.fillRect(p.x-.5*u,p.y-5*u,.6*u,.2*u)}
+   else if(ty==1){g.fillStyle='#5b4130';g.fillRect(p.x-.15*u,p.y-2*u,.3*u,2*u);g.fillStyle='#2f7d3a';g.beginPath();g.arc(p.x,p.y-3*u,1.5*u,0,6.3);g.fill()}
+   else{g.fillStyle=['#c2410c','#1d4ed8','#a16207','#0f766e'][i%4];g.fillRect(p.x-1.5*u,p.y-3.2*u,3*u,3.2*u);g.fillStyle='rgba(255,255,255,.55)';g.fillRect(p.x-1.2*u,p.y-1.9*u,2.4*u,1.2*u)}}}}
+function drawCam(){const s=S,A=s.A,c=$('cv'),g=c.getContext('2d'),W=c.width,H=c.height,HZ=120,hw=s.sc.hw,real=vid&&vid.videoWidth;
+ const P=(x,y)=>{const k=1/(1+Math.max(y,0)*.11);return{x:W/2+(x-s.x)*k*60,y:HZ+(H-HZ-10)*k,s:k}};
+ if(real)g.drawImage(vid,0,0,W,H);else{
+  g.save();g.translate(0,Math.sin(s.t*9)*s.v*.03);
+  const gr=g.createLinearGradient(0,0,0,HZ);gr.addColorStop(0,'#3b6ea5');gr.addColorStop(1,'#d6e8f7');g.fillStyle=gr;g.fillRect(0,-10,W,HZ+10);
+  g.fillStyle='#8aa0b8';for(let i=-1;i<16;i++){const q=(i*37)%28;g.fillRect(i*44-s.x*4,HZ-10-q,30,10+q)}
+  g.fillStyle='#6b5d45';g.fillRect(0,HZ,W,H-HZ+10);
+  for(let z=-(s.dist%3);z<72;z+=3){const i=Math.floor((z+s.dist+.01)/3),a=P(-hw,z),b=P(hw,z),e=P(hw,z+3),d=P(-hw,z+3);g.fillStyle=i%2?'#3a3f4a':'#43484f';g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.lineTo(e.x,e.y);g.lineTo(d.x,d.y);g.fill()}
+  g.strokeStyle='#e5e7eb';g.lineWidth=2;[-hw+.2,hw-.2].forEach(x=>{const a=P(x,0),b=P(x,80);g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke()});
+  const off=s.dist%6;for(let y=6-off;y<70;y+=6){const a=P(0,y),b=P(0,y+3);g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke()}
+  scenery(g,s,P,hw)}
+ [...s.objs].sort((a,b)=>b.y-a.y).forEach(o=>{if(o.y<.6)return;const T=TY[o.t],p=P(o.x,o.y),bw=T.w*60*p.s,bh=HT[o.t]*60*p.s;
+  if(!real)sprite(g,o,p.x,p.y,60*p.s,s.t);
+  g.lineWidth=2;g.strokeStyle=RC[o.lvl];g.strokeRect(p.x-bw/2-2,p.y-bh-2,bw+4,bh+4);
+  g.fillStyle=RC[o.lvl];g.fillRect(p.x-bw/2-2,p.y-bh-16,Math.max(bw+4,92),14);g.fillStyle='#fff';g.font='11px system-ui';g.fillText(`${T.n} ${o.conf*100|0}% p=${o.p*100|0}%`,p.x-bw/2+1,p.y-bh-5)});
+ g.strokeStyle='#22c55e';g.lineWidth=5;g.lineCap='round';g.beginPath();for(let y=0;y<=30;y+=2){const p=P(pth(s,y,A.tc),y);y?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y)}g.stroke();
+ if(!real)g.restore();
+ g.fillStyle='rgba(0,0,0,.55)';g.fillRect(8,8,330,22);g.fillStyle='#fff';g.font='12px system-ui';g.fillText((real?(vid.srcObject?'Webcam':'Uploaded video')+' + simulated detections':'Simulated dash-cam')+' · '+s.sc.n.split(' (')[0]+(rec&&rec.state=='recording'?' · ⏺ REC':''),14,23);
+ g.fillStyle='rgba(0,0,0,.55)';g.fillRect(W-150,H-26,142,18);g.fillStyle='#fff';g.fillText(Math.round(s.v*3.6)+' km/h · t+'+s.t.toFixed(0)+' s',W-144,H-12);
+ if(s.mrm&&Math.sin(s.t*8)>0){g.fillStyle='#ef4444';g.fillRect(W-120,34,112,22);g.fillStyle='#fff';g.fillText('⚠ HAZARDS ON',W-112,49)}}
+function drawBird(){const s=S,A=s.A,c=$('bird'),g=c.getContext('2d'),W=c.width,H=c.height,X=x=>W/2+(x-s.x)*10,Y=y=>H-30-y*9,hw=s.sc.hw;
+ g.fillStyle='#0b1020';g.fillRect(0,0,W,H);g.fillStyle='#2a303c';g.fillRect(X(-hw),0,hw*20,H);
+ const mx=Math.max(...A.costs.map(k=>k.cost),1);A.costs.forEach(k=>{const ch=k.c==A.tc;g.strokeStyle=ch?'#22c55e':`rgba(245,158,11,${.15+.5*k.cost/mx})`;g.lineWidth=ch?4:2;g.beginPath();for(let y=0;y<=30;y+=2){y?g.lineTo(X(pth(s,y,k.c)),Y(y)):g.moveTo(X(pth(s,y,k.c)),Y(y))}g.stroke()});
+ s.objs.forEach(o=>{const T=TY[o.t];if(o.P){g.fillStyle=T.c+'66';o.P.forEach((p,i)=>{if(i%3==0){g.beginPath();g.arc(X(p[0]+p[2]*2.5),Y(p[1]+p[3]*2.5),2,0,6.3);g.fill()}})}
+  g.fillStyle=T.c;g.fillRect(X(o.x)-T.w*5,Y(o.y)-T.l*4.5,T.w*10,T.l*9);g.strokeStyle=RC[o.lvl];g.lineWidth=2;g.strokeRect(X(o.x)-T.w*5-2,Y(o.y)-T.l*4.5-2,T.w*10+4,T.l*9+4)});
+ g.fillStyle='#60a5fa';g.fillRect(X(s.x)-9,Y(0),18,38);g.fillStyle='#fff';g.font='11px system-ui';g.fillText('EGO',X(s.x)-10,Y(0)+24)}
+function face(){const s=S,g=$('fc').getContext('2d');g.clearRect(0,0,140,70);const o=Math.max(.08,1-.85*s.sev)*(Math.sin(s.t*2.1)>.97?.1:1);
+ g.fillStyle='#e8c9a0';g.beginPath();g.ellipse(70,36,48,32,0,0,6.3);g.fill();[-20,20].forEach(d=>{g.fillStyle='#fff';g.beginPath();g.ellipse(70+d,32,11,12*o+1,0,0,6.3);g.fill();g.fillStyle='#222';g.beginPath();g.arc(70+d+s.sev*3,32,Math.min(4,12*o),0,6.3);g.fill()})}
+function ui(){const s=S,A=s.A,L=A.lvl,g=sig(s);
+ $('badge').textContent=RN[L]+' RISK';$('badge').style.background=RC[L];$('why').textContent='Why: '+A.why;
+ $('dec').textContent=A.st+(A.st=='EVADE'?` → lane offset ${A.tc.toFixed(1)} m`:'')+` · target ${Math.round(A.tv*3.6)} km/h`;
+ $('m').innerHTML=[['collisions',s.col],['min gap (m)',s.gap>90?'–':s.gap.toFixed(1)],['replan ms',s.msN?(s.msSum/s.msN).toFixed(2):'–'],['RMS lat acc',s.an?Math.sqrt(s.a2/s.an).toFixed(2):'0'],['distance (m)',s.dist|0],['speed km/h',Math.round(s.v*3.6)]].map(([k,v])=>`<div><b>${v}</b>${k}</div>`).join('');
+ const mx=Math.max(...A.costs.map(k=>k.cost),1);$('costs').innerHTML=A.costs.length?A.costs.map(k=>`<div class="bar"><span style="width:44px">${k.c>0?'+':''}${k.c} m</span><i style="width:${6+k.cost/mx*140}px;background:${k.c==A.tc?'#22c55e':'#f59e0b'}"></i>risk ${(k.risk*100).toFixed(0)}%${k.c==A.tc?' ✔':''}</div>`).join(''):'<div class="sub">Brake-only baseline: no lateral planning</div>';
+ $('tb').innerHTML=[...s.objs].filter(o=>o.ttc!==undefined).sort((a,b)=>a.y-b.y).slice(0,7).map(o=>`<tr><td>${TY[o.t].n}</td><td>${o.conf*100|0}%</td><td>${o.ey.toFixed(0)} m</td><td>${o.ttc>50?'–':o.ttc.toFixed(1)+' s'}</td><td>${o.p*100|0}%</td><td><span class="chip" style="background:${RC[o.lvl]}">${RN[o.lvl]}</span></td></tr>`).join('');
+ $('al').innerHTML=s.alerts.length?s.alerts.map(a=>`<div class="al"><span class="chip" style="background:${RC[a.l]}">${RN[a.l]}</span> t+${a.t.toFixed(0)}s · ${a.m}</div>`).join(''):'<div class="sub">No alerts yet</div>';
+ $('t2').textContent=s.objs.length+' tracks';$('t3').textContent=s.mode=='ours'?N+' MC samples/obj':'TTC rule';$('t4').textContent=s.alerts.filter(a=>s.t-a.t<4).length+' recent';$('t5').textContent=(s.msN?(s.msSum/s.msN).toFixed(1):'0')+' ms replan';$('t6').textContent=s.ds;
+ $('s4').className='st'+(L?' bad':'');$('s3').className='st on'+(L==2?' bad':'');$('s6').className='st on'+(s.ds=='OK'?'':' bad');
+ $('sig').textContent=`PERCLOS ${(g.perclos*100).toFixed(0)}% · reaction ${g.react.toFixed(1)} s · lane-weave ${g.weave.toFixed(2)} m · breath alcohol ${g.breath.toFixed(2)} mg/L`;
+ $('drb').style.width=6+s.dr*150+'px';$('drb').style.background=DC[s.ds];$('drv').textContent=s.dr.toFixed(2);
+ $('lad').innerHTML=DS.map(d=>`<span class="chip" style="background:${DC[d]};opacity:${d==s.ds?1:.3}">${d}</span>`).join('');
+ $('ign').textContent=(g.breath>.3?'🔒 Ignition interlock: LOCKED (alcohol above limit). ':'🔓 Ignition interlock: OK. ')+(s.ds!='OK'?`Combined risk: environment ${RN[L]} + driver ${s.ds} → thresholds tightened, margin ×${(1+.5*s.dr).toFixed(2)}, speed capped.`:'')}
+function bench(){const rows=[];let c={ours:0,brake:0},d={ours:0,brake:0};
+ SC.forEach((sc,i)=>['ours','brake'].forEach(m=>{const s=sim(i,m,11+i);for(let k=0;k<500;k++)step(s,.05);const ok=s.col==0&&s.dist>=.6*sc.cv*25;c[m]+=s.col;d[m]+=ok?1:0;
+  rows.push(`<tr><td>${sc.n}</td><td>${m=='ours'?'<b>Ours (risk-aware lattice)</b>':'Brake-only'}</td><td>${s.col}</td><td>${s.gap>90?'–':s.gap.toFixed(1)+' m'}</td><td>${(s.msSum/s.msN).toFixed(2)} ms</td><td>${Math.sqrt(s.a2/s.an).toFixed(2)} m/s²</td><td>${ok?'✔':'✘'}</td></tr>`)}));
+ $('res').innerHTML=rows.join('');$('bsum').textContent=`Ours: ${c.ours} collisions, ${d.ours}/5 completed · Brake-only: ${c.brake} collisions, ${d.brake}/5 completed`}
+$('bn').onclick=bench;
+function loop(n){const dt=Math.min((n-last)/1000,.05);last=n;if(play)step(S,dt);drawCam();drawBird();face();if(n-lastUI>200){ui();lastUI=n}requestAnimationFrame(loop)}
+step(S,.1);ui();bench();requestAnimationFrame(loop);
+</script></body></html>
